@@ -29,7 +29,6 @@
 #import "ENOAuthAuthenticator.h"
 #import "ENUserStoreClient.h"
 #import "ENLoadingViewController.h"
-#import "ENOAuthViewController.h"
 #import "ENCredentials.h"
 #import "ENCredentialStore.h"
 #import "ENSDKPrivate.h"
@@ -53,14 +52,13 @@ typedef NS_ENUM(NSInteger, ENOAuthAuthenticatorState) {
 
 NSString * ENOAuthAuthenticatorAuthInfoAppNotebookIsLinked = @"ENOAuthAuthenticatorAuthInfoAppNotebookIsLinked";
 
-@interface ENOAuthAuthenticator () <ENOAuthViewControllerDelegate, ENLoadingViewControllerDelegate>
+@interface ENOAuthAuthenticator () <ENLoadingViewControllerDelegate>
 @property (nonatomic, assign) BOOL inProgress;
 
 @property (nonatomic, assign) BOOL isCancelled;
 
 @property (nonatomic, strong) UIViewController * hostViewController;
 @property (nonatomic, strong) UINavigationController * authenticationViewController;
-@property (nonatomic, strong) ENOAuthViewController * oauthViewController;
 
 @property (nonatomic, assign) ENOAuthAuthenticatorState state;
 
@@ -418,11 +416,16 @@ NSString * ENOAuthAuthenticatorAuthInfoAppNotebookIsLinked = @"ENOAuthAuthentica
             }
         }
         else {
+            // ##### We don't support fallback #####
+            // #####     Just return error     #####
             // Open a modal ENOAuthViewController on top of our given view controller,
             // and point it at the proper Evernote web page so the user can authorize us.
-            NSString *userAuthURLString = [self userAuthorizationURLStringWithParameters:parameters];
-            NSURL *userAuthURL = [NSURL URLWithString:userAuthURLString];
-            [self openOAuthViewControllerWithURL:userAuthURL];
+            [self completeAuthenticationWithError: [NSError errorWithDomain:ENErrorDomain
+                                                                       code:ENErrorCodeUnknown
+                                                                   userInfo:nil]];
+            self.receivedData = nil;
+            self.response = nil;
+            return;
         }
     } else {
         // OAuth step 4: final callback, with our real token
@@ -459,33 +462,6 @@ NSString * ENOAuthAuthenticatorAuthInfoAppNotebookIsLinked = @"ENOAuthAuthentica
     
     self.receivedData = nil;
     self.response = nil;
-}
-
-- (void)openOAuthViewControllerWithURL:(NSURL *)authorizationURL
-{
-    BOOL isSwitchAllowed = NO;
-    if([self.profiles count]>1) {
-        isSwitchAllowed = YES;
-    }
-    else {
-        isSwitchAllowed = NO;
-    }
-    if(!self.isSwitchingInProgress ) {
-        self.oauthViewController = [[ENOAuthViewController alloc] initWithAuthorizationURL:authorizationURL
-                                                                       oauthCallbackPrefix:[self oauthCallback]
-                                                                               profileName:self.currentProfile
-                                                                            allowSwitching:isSwitchAllowed
-                                                                                  delegate:self];
-
-        // Replace the loading view with the OAuth view. Don't animate the transition, and don't leave the loading
-        // view on the view stack.
-        [self.authenticationViewController setViewControllers:@[self.oauthViewController] animated:NO];
-    }
-    else {
-        [self.oauthViewController updateUIForNewProfile:self.currentProfile withAuthorizationURL:authorizationURL];
-        self.isSwitchingInProgress = NO;
-        
-    }
 }
 
 - (void)completeAuthenticationWithCredentials:(ENCredentials *)credentials usesLinkedAppNotebook:(BOOL)linkedAppNotebook
@@ -604,24 +580,6 @@ NSString * ENOAuthAuthenticatorAuthInfoAppNotebookIsLinked = @"ENOAuthAuthentica
     return dict;
 }
 
-#pragma mark - ENOAuthViewControllerDelegate
-
-- (void)oauthViewControllerDidCancel:(ENOAuthViewController *)sender
-{
-    NSError* error = [NSError errorWithDomain:ENErrorDomain code:ENErrorCodeCancelled userInfo:nil];
-    [self completeAuthenticationWithError:error];
-}
-
-- (void)oauthViewControllerDidSwitchProfile:(ENOAuthViewController *)sender {
-    self.isSwitchingInProgress = YES;
-    [self switchProfile];
-}
-
-- (void)oauthViewController:(ENOAuthViewController *)sender didFailWithError:(NSError *)error
-{
-    [self completeAuthenticationWithError:error];
-}
-
 - (BOOL)handleOpenURL:(NSURL *)url {
     if([[url host] isEqualToString:@"invalidURL"]) {
         NSLog(@"Invalid URL sent to Evernote!");
@@ -683,11 +641,6 @@ NSString * ENOAuthAuthenticatorAuthInfoAppNotebookIsLinked = @"ENOAuthAuthentica
     [self getOAuthTokenForURL:callbackURL];
 }
 
-- (void)oauthViewController:(ENOAuthViewController *)sender receivedOAuthCallbackURL:(NSURL *)url
-{
-    [self getOAuthTokenForURL:url];
-}
-
 - (void)getOAuthTokenForURL:(NSURL*)url {
     // OAuth step 3: got authorization from the user, now get a real token.
     NSDictionary *parameters = [[self class] parametersFromQueryString:url.query];
@@ -709,6 +662,8 @@ NSString * ENOAuthAuthenticatorAuthInfoAppNotebookIsLinked = @"ENOAuthAuthentica
         [self completeAuthenticationWithError:[ENError connectionFailedError]];
     };
 }
+
+#pragma mark - ENLoadingViewControllerDelegate
 
 - (void)loadingViewControllerDidCancel:(ENLoadingViewController *)viewController
 {

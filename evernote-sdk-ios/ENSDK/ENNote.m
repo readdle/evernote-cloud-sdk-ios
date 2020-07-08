@@ -28,7 +28,6 @@
 
 #import "ENSDKPrivate.h"
 #import "NSString+ENScrubbing.h"
-#import "ENWebClipNoteBuilder.h"
 #import "ENMLUtility.h"
 #import "ENWebArchive.h"
 #import "ENMIMEUtils.h"
@@ -208,23 +207,6 @@
                                                            subframeArchives:nil];
         completion([archive data]);
     }];
-}
-
-+ (void)populateNoteFromWebView:(UIWebView *)webView completion:(ENNotePopulateFromWebViewCompletionHandler)completion
-{
-    if (!completion) {
-        ENSDKLogError(@"+populateNoteFromWebView requires a valid completion block");
-        return;
-    }
-    if (!webView) {
-        ENSDKLogError(@"+populateNoteFromWebView requires a valid webview");
-        completion(nil);
-        return;
-    }
-    
-    ENWebClipNoteBuilder * builder = [[ENWebClipNoteBuilder alloc] initWithWebView:webView];
-    // The note builder's completion handler has the same signature and behavior as our own, so pass it directly through.
-    [builder buildNote:completion];
 }
 
 #pragma mark - Protected methods
